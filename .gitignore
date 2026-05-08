@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+backend/venv/
+
+# ML models
+*.pkl
+
+# Flutter
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+.gradle/
+local.properties
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
