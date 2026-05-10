@@ -3,8 +3,12 @@ __pycache__/
 *.pyc
 backend/venv/
 
-# ML models
+# ML models (ignore all but allow backend model)
 *.pkl
+!backend/sentiment_model.pkl
+
+# Kaggle notebook (NOT for production repo)
+Kaggle_notebook/
 
 # Flutter
 build/
