@@ -1,4 +1,4 @@
-# main.py — ReviewLens FastAPI Backend (Linear SVC Model)
+# main.py — ReviewLens FastAPI Backend (Linear SVC Model + Hybrid Correction)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,14 +40,14 @@ print('Model loaded successfully')
 # ==========================================================
 # Text Cleaning Function
 # IMPORTANT:
-# This must be identical to the preprocessing used during training.
+# Must match the preprocessing used during training.
 # ==========================================================
 def clean_text(text: str) -> str:
     text = str(text).lower()
-    text = re.sub(r'http\S+', '', text)       # Remove URLs
-    text = re.sub(r'<.*?>', '', text)         # Remove HTML tags
-    text = re.sub(r'[^a-z\s]', '', text)      # Keep only letters and spaces
-    text = re.sub(r'\s+', ' ', text).strip()  # Remove extra spaces
+    text = re.sub(r'http\S+', '', text)
+    text = re.sub(r'<.*?>', '', text)
+    text = re.sub(r'[^a-z\s]', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 
@@ -64,12 +64,48 @@ STOPWORDS = {
 
 
 # ==========================================================
+# Roman Urdu Sentiment Keywords
+# ==========================================================
+POSITIVE_ROMAN_URDU = {
+    'acha',
+    'achi',
+    'boht acha',
+    'bht acha',
+    'zabardast',
+    'best',
+    'recommended',
+    'soft',
+    'same as shown',
+    'same to pic',
+    'alhamdulillah',
+    'excellent',
+    'good quality',
+    'value for money',
+    'cooperative',
+    'fast delivery',
+    'worth buying',
+    'original'
+}
+
+NEGATIVE_ROMAN_URDU = {
+    'bekar',
+    'kharab',
+    'not good',
+    'low quality',
+    'wrong color',
+    'different color',
+    'fake',
+    'damaged',
+    'poor quality',
+    'waste of money',
+    'broken'
+}
+
+
+# ==========================================================
 # Keyword Extraction
 # ==========================================================
 def extract_keywords(reviews: list, top_n: int = 5) -> list:
-    """
-    Extract most common meaningful words from review texts.
-    """
     all_words = []
 
     for review in reviews:
@@ -83,7 +119,6 @@ def extract_keywords(reviews: list, top_n: int = 5) -> list:
         all_words.extend(filtered_words)
 
     counter = Counter(all_words)
-
     return [word for word, _ in counter.most_common(top_n)]
 
 
@@ -91,8 +126,8 @@ def extract_keywords(reviews: list, top_n: int = 5) -> list:
 # Request Model
 # ==========================================================
 class AnalyzeRequest(BaseModel):
-    product_url: str          # Daraz product URL
-    max_pages: int = 3        # Number of review pages to scrape
+    product_url: str
+    max_pages: int = 3
 
 
 # ==========================================================
@@ -102,7 +137,7 @@ class AnalyzeRequest(BaseModel):
 def root():
     return {
         'status': 'ReviewLens API is running',
-        'model': 'Linear SVC + CalibratedClassifierCV',
+        'model': 'Linear SVC + CalibratedClassifierCV + Hybrid Rules',
         'dataset_trained': 'arhamrumi/amazon-product-reviews (568K reviews)',
         'endpoints': {
             'POST /analyze': 'Analyze reviews from a Daraz product URL'
@@ -141,14 +176,46 @@ def analyze(req: AnalyzeRequest):
         # ==================================================
         # 3. Predict Sentiments
         # ==================================================
-        predictions = model.predict(cleaned)
-
-        # Since model uses CalibratedClassifierCV,
-        # predict_proba() is available
+        predictions = list(model.predict(cleaned))
         probabilities = model.predict_proba(cleaned)
 
         # ==================================================
-        # 4. Calculate Summary Statistics
+        # 4. Hybrid Rule-Based Correction
+        # ==================================================
+        for i in range(len(predictions)):
+            text = review_texts[i].lower()
+            rating = raw_reviews[i].get('rating', 0)
+            confidence = float(max(probabilities[i]))
+            pred = predictions[i]
+
+            positive_hits = sum(
+                1 for keyword in POSITIVE_ROMAN_URDU
+                if keyword in text
+            )
+
+            negative_hits = sum(
+                1 for keyword in NEGATIVE_ROMAN_URDU
+                if keyword in text
+            )
+
+            # Strong positive indicators in high-rated reviews
+            if pred == 'negative' and positive_hits >= 2 and rating >= 4:
+                predictions[i] = 'positive'
+
+            # Mixed positive and negative signals
+            elif positive_hits >= 1 and negative_hits >= 1:
+                predictions[i] = 'neutral'
+
+            # High-rated reviews should rarely be strongly negative
+            elif pred == 'negative' and rating >= 4 and confidence < 0.80:
+                predictions[i] = 'neutral'
+
+            # Five-star reviews with positive keywords
+            elif rating == 5 and positive_hits >= 1 and confidence < 0.90:
+                predictions[i] = 'positive'
+
+        # ==================================================
+        # 5. Calculate Summary Statistics
         # ==================================================
         total = len(predictions)
 
@@ -157,7 +224,7 @@ def analyze(req: AnalyzeRequest):
         neu = total - pos - neg
 
         # ==================================================
-        # 5. Collect Positive and Negative Reviews
+        # 6. Collect Positive and Negative Reviews
         # ==================================================
         positive_reviews = [
             review_texts[i]
@@ -172,7 +239,7 @@ def analyze(req: AnalyzeRequest):
         ]
 
         # ==================================================
-        # 6. Extract Keywords
+        # 7. Extract Keywords
         # ==================================================
         praise = (
             extract_keywords(positive_reviews)
@@ -185,7 +252,7 @@ def analyze(req: AnalyzeRequest):
         )
 
         # ==================================================
-        # 7. Prepare Sample Reviews (First 10)
+        # 8. Prepare Sample Reviews
         # ==================================================
         sample_reviews = []
 
@@ -202,7 +269,7 @@ def analyze(req: AnalyzeRequest):
             })
 
         # ==================================================
-        # 8. Return JSON Response
+        # 9. Return JSON Response
         # ==================================================
         return {
             'total_reviews': total,
@@ -219,18 +286,15 @@ def analyze(req: AnalyzeRequest):
             'sample_reviews': sample_reviews
         }
 
-    # Invalid URL format
     except ValueError as e:
         raise HTTPException(
             status_code=400,
             detail=str(e)
         )
 
-    # Re-raise FastAPI exceptions unchanged
     except HTTPException:
         raise
 
-    # Unexpected server errors
     except Exception as e:
         print(f'ERROR: {e}')
 
@@ -238,3 +302,4 @@ def analyze(req: AnalyzeRequest):
             status_code=500,
             detail=f'Server error: {str(e)}'
         )
+
