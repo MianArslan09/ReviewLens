@@ -64,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ReviewLens — Linear SVC'),
+        title: const Text('ReviewLens — by Arslan'),
         backgroundColor: Colors.deepOrange,
         foregroundColor: Colors.white,
       ),
