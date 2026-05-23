@@ -20,8 +20,9 @@ build/
 .gradle/
 local.properties
 
-# VS Code
+# IDEs (VS Code & IntelliJ/Android Studio)
 .vscode/
+.idea/
 
 # OS
 .DS_Store
