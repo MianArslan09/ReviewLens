@@ -4,7 +4,9 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:fl_chart/fl_chart.dart';
 
-const String BASE_URL = 'http://192.168.100.7:8000';
+
+const String BASE_URL = 'https://reviewlens-d401.onrender.com'; // render cloud 
+// const String BASE_URL = 'http://192.168.100.7:8000'; real phone manual
 // const String BASE_URL = 'http://10.0.2.2:8000'; // emulator
 // const String BASE_URL = 'http://YOUR_LAPTOP_IP:8000'; // real phone
 
